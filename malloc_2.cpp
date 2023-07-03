@@ -3,6 +3,10 @@
 //
 
 #include <unistd.h>
+//#include <std::memset>
+#include <stdio.h>
+#include <string.h>
+
 
 #define PAGE_IN_BYTES 4096
 #define MAX_ALLOC 100000000
@@ -97,7 +101,11 @@ void* smalloc(size_t size){
 
 
 void* scalloc(size_t num, size_t size){
-
+    void* cur_ptr = smalloc(num*size);
+    if (cur_ptr == NULL){
+        return NULL;
+    }
+    return memset(cur_ptr, 0, num*size);
 }
 
 
@@ -164,13 +172,22 @@ size_t _num_allocated_blocks(){
 }
 
 
-size_t _num_allocated_bytes(){}
-
-
-size_t _num_meta_data_bytes(){}
+size_t _num_allocated_bytes(){
+    size_t bytes_count = 0;
+    MallocMetadata temp = list.m_first;
+    while(temp != NULL){
+        bytes_count += temp->m_size;
+        temp = temp->m_next;
+    }
+    return bytes_count;
+}
 
 
 size_t _size_meta_data(){
     //return sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*);
     return sizeof(malloc_metadata);
+}
+
+size_t _num_meta_data_bytes(){
+    return _size_meta_data()*_num_allocated_blocks();
 }
