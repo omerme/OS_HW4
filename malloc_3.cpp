@@ -23,13 +23,18 @@ typedef struct malloc_metadata_t {
 } *MallocMetadata, malloc_metadata ; // total MallocMetadata size (min size of block) = sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*)
 
 
-struct BlockList {
+typedef struct block_list_t {
     MallocMetadata m_first;
     MallocMetadata m_last;
 
+    //block_list_t* createAllocList();
+    //block_list_t* createFreeList();
     MallocMetadata searchList(size_t size) const;
     void addBlock(MallocMetadata newNode, size_t size);
-};
+    // void removeBlock(MallocMetadata newNode, size_t size);
+    // void split(MallocMetadata newNode);
+    MallocMetadata combine(MallocMetadata newNode);
+} *BlockList, block_list;
 
 
 size_t _num_free_blocks();
@@ -43,6 +48,9 @@ void* scalloc(size_t num, size_t size);
 void sfree(void* p) ;
 void* srealloc(void* oldp, size_t size);
 
+BlockList allocated = NULL;
+
+BlockList free_blocks[FREE_ARR_SIZE] = {NULL}; // struct MyStruct* myArray[11] = {NULL};
 
 // check if a *free* block in list is bigger then size argument:
 // return block ptr, or NULL if failed.
