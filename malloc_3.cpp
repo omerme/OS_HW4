@@ -1,28 +1,36 @@
 //
-// Created by Omer Meushar on 02/07/2023.
+// Created by Omer Meushar on 03/07/2023.
 //
 
 #include <unistd.h>
+//#include <std::memset>
+#include <stdio.h>
+#include <string.h>
+#include <cstdlib>
+
 
 #define PAGE_IN_BYTES 4096
 #define MAX_ALLOC 100000000
 
-
-
 typedef struct malloc_metadata_t {
+    int cookie;
     size_t m_size;
     bool m_is_free;
-    malloc_metadata_t* m_next;
-    malloc_metadata_t* m_prev;
-}*MallocMetadata, malloc_metadata ; // total MallocMetadata size (min size of block) = sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*)
+    malloc_metadata_t* m_alloc_next;
+    malloc_metadata_t* m_alloc_prev;
+    malloc_metadata_t* m_free_next;
+    malloc_metadata_t* m_free_prev;
+} *MallocMetadata, malloc_metadata ; // total MallocMetadata size (min size of block) = sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*)
+
 
 struct BlockList {
-    MallocMetadata m_first; // first
-    MallocMetadata m_last; // last
+    MallocMetadata m_first;
+    MallocMetadata m_last;
 
     MallocMetadata searchList(size_t size) const;
     void addBlock(MallocMetadata newNode, size_t size);
 };
+
 
 size_t _num_free_blocks();
 size_t _num_free_bytes();
@@ -97,7 +105,11 @@ void* smalloc(size_t size){
 
 
 void* scalloc(size_t num, size_t size){
-
+    void* cur_ptr = smalloc(num*size);
+    if (cur_ptr == NULL){
+        return NULL;
+    }
+    return memset(cur_ptr, 0, num*size);
 }
 
 
@@ -164,13 +176,22 @@ size_t _num_allocated_blocks(){
 }
 
 
-size_t _num_allocated_bytes(){}
-
-
-size_t _num_meta_data_bytes(){}
+size_t _num_allocated_bytes(){
+    size_t bytes_count = 0;
+    MallocMetadata temp = list.m_first;
+    while(temp != NULL){
+        bytes_count += temp->m_size;
+        temp = temp->m_next;
+    }
+    return bytes_count;
+}
 
 
 size_t _size_meta_data(){
     //return sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*);
     return sizeof(malloc_metadata);
+}
+
+size_t _num_meta_data_bytes(){
+    return _size_meta_data()*_num_allocated_blocks();
 }
