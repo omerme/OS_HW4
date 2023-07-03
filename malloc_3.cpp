@@ -11,6 +11,9 @@
 
 #define PAGE_IN_BYTES 4096
 #define MAX_ALLOC 100000000
+#define ALLOC_MAX_BLOCK 131072 // 128*1024
+#define ALLOC_LIST_SIZE 4194304 // 128*1024*32
+#define FREE_ARR_SIZE 11
 
 typedef struct malloc_metadata_t {
     int cookie;
@@ -80,13 +83,29 @@ void BlockList::addBlock(MallocMetadata newNode, size_t size) {
     m_last = newNode;
 }
 
+__uint8_t * initAllocList(){
+    __uint8_t* start_brk = (__uint8_t*)sbrk(0);
+    /// assert start_brk%4096=0;
+    unsigned int brk_diff = ALLOC_LIST_SIZE - ((unsigned long)start_brk)%(ALLOC_LIST_SIZE);
 
-BlockList list {NULL,NULL};
+    __uint8_t* cur_brk =(__uint8_t*)sbrk(brk_diff + ALLOC_LIST_SIZE);
+    if(cur_brk==(void*)(-1))
+        return NULL;
+    cur_brk += brk_diff; //advance to multiply of 128k*32
+    for(int i=0; i<FREE_ARR_SIZE; i++) {
+        free_blocks[i]= (BlockList)(cur_brk + i*ALLOC_MAX_BLOCK);
+        /// init something else?
+    } /////////stopped here
 
+
+}
 
 void* smalloc(size_t size){
     if(size==0 || size > MAX_ALLOC)
         return NULL;
+    if(allocated==NULL) {
+        initAllocList();
+    }
     MallocMetadata free_block = list.searchList(size);
     if (free_block != NULL) {
         free_block->m_is_free = false;
