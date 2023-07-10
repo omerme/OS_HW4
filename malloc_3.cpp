@@ -30,13 +30,9 @@ typedef struct block_list_t {
     MallocMetadata m_first;
     MallocMetadata m_last;
 
-    //block_list_t* createAllocList();
-    //block_list_t* createFreeList();
-    MallocMetadata searchList(size_t size) const;
+    MallocMetadata searchBuddy(MallocMetadata buddy1) const;
     void addBlock(MallocMetadata newNode, size_t size, bool is_free);
-    // void removeBlock(MallocMetadata newNode, size_t size);
-    // void split(MallocMetadata newNode);
-    MallocMetadata combine(MallocMetadata newNode);
+    void removeBlock(MallocMetadata to_remove, bool is_free);
 } *BlockList, block_list;
 
 
@@ -57,12 +53,13 @@ BlockList allocated = NULL;
 
 BlockList free_blocks[FREE_ARR_SIZE] = {NULL}; // struct MyStruct* myArray[11] = {NULL};
 
-// check if a *free* block in list is bigger then size argument:
-// return block ptr, or NULL if failed.
-MallocMetadata block_list_t::searchList(size_t size) const{
+/**search for a free buddy for buddy1, if there is none, return NULL **/
+MallocMetadata block_list_t::searchBuddy(MallocMetadata buddy1) const{
     MallocMetadata temp = m_first;
+    uintptr_t int_buddy1 = reinterpret_cast<uintptr_t>(buddy1);
     while(temp != NULL) {
-        if(temp->m_is_free and temp->m_size>=size){
+        uintptr_t int_buddy2 = reinterpret_cast<uintptr_t>(temp);
+        if(int_buddy1^int_buddy2){
             return temp;
         }
         temp = temp->m_free_next;
@@ -71,7 +68,7 @@ MallocMetadata block_list_t::searchList(size_t size) const{
 }
 
 //adding a new block to list
-void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {   //TODO: sort by address, consider separating to free and allocated
+void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {   //TODO: sort by address
     if(m_first==NULL) {
         m_first = newNode;
     }
@@ -93,6 +90,40 @@ void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
     }
     m_last = newNode;
 }
+
+void block_list_t::removeBlock(MallocMetadata to_remove, bool is_free) {
+    if (!is_free){
+        if (to_remove == m_first){
+            m_first = m_first->m_alloc_next;
+            m_first->m_alloc_prev = NULL;
+        }
+        if (to_remove == m_last){
+            m_last = m_last->m_alloc_prev;
+            m_last->m_alloc_next = NULL;
+        }
+        if (to_remove != m_first and to_remove != m_last){
+            to_remove->m_alloc_next->m_alloc_prev = to_remove->m_alloc_prev;
+            to_remove->m_alloc_prev->m_alloc_next = to_remove->m_alloc_next;
+        }
+    }
+    else{
+        if (to_remove == m_first){
+            m_first = m_first->m_free_next;
+            m_first->m_free_prev = NULL;
+        }
+        if (to_remove == m_last){
+            m_last = m_last->m_free_prev;
+            m_last->m_free_next = NULL;
+        }
+        if (to_remove != m_first and to_remove != m_last){
+            to_remove->m_free_next->m_free_prev = to_remove->m_free_prev;
+            to_remove->m_free_prev->m_free_next = to_remove->m_free_next;
+        }
+    }
+}
+
+
+
 
 MallocMetadata popBlock(int order) {
     if (free_blocks[order] == NULL)
@@ -153,6 +184,24 @@ MallocMetadata split_blocks(size_t size, int order){
     return free_blocks[order]->m_first;
 }
 
+void combine(MallocMetadata buddy1, int order){
+    MallocMetadata buddy2;
+    MallocMetadata combined;
+    while (order < FREE_ARR_SIZE-1 ){
+        buddy2 = free_blocks[order]->searchBuddy(buddy1);
+        if (buddy2 == NULL){   //there is no free buddy
+            return;
+        }
+        combined = (reinterpret_cast<uintptr_t>(buddy1) > reinterpret_cast<uintptr_t>(buddy2)) ? buddy1 : buddy2;   //the combined block starts at the smaller buddy
+        free_blocks[order]->removeBlock(buddy1, true);   //remove two small buddys
+        free_blocks[order]->removeBlock(buddy2, true);
+        order++;
+        int new_size = (1 << (7+order)) - sizeof(malloc_metadata);
+        free_blocks[order]->addBlock(combined, new_size, true);   //add large combined block
+        buddy1 = combined;    //for next iteration, find a buddy for the combined block
+    }
+}
+
 
 
 void* smalloc(size_t size){
@@ -169,34 +218,14 @@ void* smalloc(size_t size){
             to_alloc = split_blocks(size, order);
         else
             to_alloc = free_blocks[order]->m_first;
-        /// what to do if NULL??
-        allocated->addBlock(to_alloc, size, false);  ///TODO: should it be size? i think it should be according to the order
+        /// what to do if NULL??, will not be tested according to piazza 599
+        allocated->addBlock(to_alloc, to_alloc->m_size, false);
         return (void*)(((__uint8_t*)to_alloc) + sizeof(malloc_metadata));
     }
     else{  // large alloc, allocate with mmap
 
     }
-//    if (free_block != NULL) {
-//        free_block->m_is_free = false;
-//        return (void *)((__uint8_t*)(free_block) + sizeof(free_block));
-//    }
-//    __uint8_t * cur_ptr = (__uint8_t*)list.m_last + (list.m_last->m_size) + sizeof(malloc_metadata);
-//    size_t tot_size = size + sizeof(malloc_metadata);
-//    __uint8_t * curr_brk = (__uint8_t *)sbrk(0);
-//    //size_t cur_diff = curr_brk - cur_ptr;
-//    if((size_t)(curr_brk - cur_ptr) > tot_size) { // enough space for allocation:
-//        cur_ptr += tot_size;
-//    }
-//    else { // not enough space for allocation - need to allocate more!
-//        unsigned long int pages_to_alloc = tot_size/PAGE_IN_BYTES;
-//        curr_brk = (__uint8_t *)sbrk(PAGE_IN_BYTES*(pages_to_alloc+1));
-//        if (curr_brk == (void*)(-1)) {
-//            return NULL;
-//        }
-//        cur_ptr += tot_size;
-//    }
-//    list.addBlock((MallocMetadata)(cur_ptr-tot_size), size);
-//    return (void*)(cur_ptr-size);
+
 }
 
 
@@ -209,11 +238,14 @@ void* scalloc(size_t num, size_t size){
 }
 
 
-void sfree(void* p) {
+void sfree(void* p) {     //TODO: add cookie support
     if(p==NULL)
         return;
     MallocMetadata bytePtr = (MallocMetadata)((__uint8_t*)p - _size_meta_data());
-    bytePtr->m_is_free = true;
+    allocated->removeBlock(bytePtr, false);   //remove from allocated
+    int order = calc_order(bytePtr->m_size);
+    free_blocks[order]->addBlock(bytePtr, bytePtr->m_size, true);  //add to free list
+    combine(bytePtr, order);
 }
 
 
