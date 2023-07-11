@@ -558,15 +558,15 @@ size_t _num_meta_data_bytes(){
     return _size_meta_data()*_num_allocated_blocks();
 }
 
-int main() {
-    char* s1 = (char*) smalloc(10);
-    char* s2 = (char*) smalloc(10);
-    char* s3 = (char*) smalloc(10);
-    sfree(s1);
-    sfree(s2);
-    sfree(s3);
-    sfree(s3);
-    //char* s1_new = (char*) smalloc(10);
-
-
-}
+//int main() {
+//    char* s1 = (char*) smalloc(10);
+//    char* s2 = (char*) smalloc(10);
+//    char* s3 = (char*) smalloc(10);
+//    sfree(s1);
+//    sfree(s2);
+//    sfree(s3);
+//    sfree(s3);
+//    //char* s1_new = (char*) smalloc(10);
+//
+//
+//}
