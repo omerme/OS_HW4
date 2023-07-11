@@ -3,8 +3,6 @@
 //
 
 #include <unistd.h>
-//#include <std::memset>
-#include <stdio.h>
 #include <string.h>
 
 
@@ -17,7 +15,7 @@ typedef struct malloc_metadata_t {
     size_t m_size;
     bool m_is_free;
     malloc_metadata_t* m_next;
-    malloc_metadata_t* m_prev;
+    //malloc_metadata_t* m_prev;
 }*MallocMetadata, malloc_metadata ; // total MallocMetadata size (min size of block) = sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*)
 
 struct BlockList {

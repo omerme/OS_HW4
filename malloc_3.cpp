@@ -3,10 +3,7 @@
 //
 
 #include <unistd.h>
-//#include <std::memset>
-#include <stdio.h>
 #include <string.h>
-#include <cstdlib>
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <time.h>
@@ -233,31 +230,31 @@ void mmap_list_t::mmap_AddBlock(MallocMetadata newNode, size_t size) {
 }
 
 
-void mmap_list_t::mmap_RemoveBlock(MallocMetadata to_delete){
-    assert(to_delete!=NULL);
+void mmap_list_t::mmap_RemoveBlock(MallocMetadata to_remove){
+    assert(to_remove!=NULL);
     giveMeCookieGotYouCookie(m_first);
     giveMeCookieGotYouCookie(m_last);
-    if (to_delete==m_first and to_delete==m_last){
+    if (to_remove==m_first and to_remove==m_last){
         m_first = NULL;
         m_last = NULL;
         return;
     }
-    if (to_delete == m_first){
-        giveMeCookieGotYouCookie(to_delete->m_alloc_next);
-        to_delete->m_alloc_next->m_alloc_prev = NULL;
-        m_first = to_delete->m_alloc_next;
+    if (to_remove == m_first){
+        giveMeCookieGotYouCookie(to_remove->m_alloc_next);
+        to_remove->m_alloc_next->m_alloc_prev = NULL;
+        m_first = to_remove->m_alloc_next;
         return;
     }
-    if (to_delete == m_last){
-        giveMeCookieGotYouCookie(to_delete->m_alloc_prev);
-        to_delete->m_alloc_prev->m_alloc_next = NULL;
-        m_last = to_delete->m_alloc_prev;
+    if (to_remove == m_last){
+        giveMeCookieGotYouCookie(to_remove->m_alloc_prev);
+        to_remove->m_alloc_prev->m_alloc_next = NULL;
+        m_last = to_remove->m_alloc_prev;
         return;
     }
     MallocMetadata temp = m_first->m_alloc_next;
     while (temp != m_last){
         giveMeCookieGotYouCookie(temp);
-        if (temp == to_delete){;
+        if (temp == to_remove){
             giveMeCookieGotYouCookie(temp->m_alloc_next);
             to_delete->m_alloc_prev->m_alloc_next = to_delete->m_alloc_next;
             to_delete->m_alloc_next->m_alloc_prev = to_delete->m_alloc_prev;
@@ -294,6 +291,7 @@ __uint8_t * initAllocList(){
     if(cur_brk==(void*)(-1))
         return NULL;
     cur_brk += brk_diff; //advance to multiply of 128k*32
+    assert((unsigned long)cur_brk % ALLOC_LIST_SIZE == 0);
     srand(time(NULL));
     COOKIE_VAL = rand();
     for(int i=0; i<(ALLOC_LIST_SIZE/ALLOC_MAX_BLOCK); i++) {
@@ -312,7 +310,7 @@ int calc_order(size_t size){
 
 
 /** splits larger blocks until finds a free block in the wanted size **/
-MallocMetadata split_blocks(size_t size, int order){
+MallocMetadata split_blocks(int order){
     int next_free_order = order;
     while(next_free_order < FREE_ARR_SIZE and free_blocks[next_free_order]==NULL) {
         next_free_order++;
@@ -343,7 +341,7 @@ MallocMetadata combine(MallocMetadata buddy1, int order, int max_order = FREE_AR
         free_blocks[order]->removeBlock(buddy1, true);   //remove two small buddys
         free_blocks[order]->removeBlock(buddy2, true);
         order++;
-        int new_size = (1 << (7+order)) - sizeof(malloc_metadata);
+        int new_size = (1 << (7+order)) - (int)sizeof(malloc_metadata);
         free_blocks[order]->addBlock(combined, new_size, true); //add large combined block
         buddy1 = combined;    //for next iteration, find a buddy for the combined block
     }
@@ -362,7 +360,7 @@ void* smalloc(size_t size) {
     if (order < FREE_ARR_SIZE) {   //not a large alloc, allocate from heap
         MallocMetadata to_alloc = NULL;
         if (free_blocks[order] == NULL)  //there is no free block in the correct order, need to split a bigger one
-            to_alloc = split_blocks(size, order);
+            to_alloc = split_blocks(order);
         else
             to_alloc = free_blocks[order]->m_first;
         /// what to do if NULL??, will not be tested according to piazza 599
