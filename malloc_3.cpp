@@ -42,6 +42,7 @@ typedef struct block_list_t {
     MallocMetadata m_first;
     MallocMetadata m_last;
 
+    block_list_t() : m_first(NULL), m_last(NULL){}
     MallocMetadata searchBuddy(MallocMetadata buddy1) const;
     void addBlock(MallocMetadata newNode, size_t size, bool is_free);
     void removeBlock(MallocMetadata to_remove, bool is_free);
@@ -81,7 +82,7 @@ block_list free_val[FREE_ARR_SIZE];
 BlockList free_blocks[FREE_ARR_SIZE]; // struct MyStruct* myArray[11] = {NULL};
 
 
-MmapList large_allocated = NULL;
+MmapList large_allocated;
 
 u_int32_t COOKIE_VAL;
 
@@ -320,6 +321,9 @@ bool initAllocList(){
     assert((unsigned long)cur_brk % ALLOC_LIST_SIZE == 0);
     srand(time(NULL));
     COOKIE_VAL = rand();
+    for (int i=0; i<FREE_ARR_SIZE; i++){
+        free_blocks[i] = &free_val[i];
+    }
     for(int i=0; i<(ALLOC_LIST_SIZE/ALLOC_MAX_BLOCK); i++) {
         free_blocks[FREE_ARR_SIZE-1]->addBlock((MallocMetadata)(cur_brk + i*ALLOC_MAX_BLOCK), ALLOC_MAX_BLOCK-sizeof(malloc_metadata), true);
     }
@@ -386,12 +390,14 @@ void* smalloc(size_t size) {
     int order = calc_order(size);
     if (order < FREE_ARR_SIZE) {   //not a large alloc, allocate from heap
         MallocMetadata to_alloc = NULL;
-        if (free_blocks[order] == NULL)  //there is no free block in the correct order, need to split a bigger one
+        if (free_blocks[order]->m_first == NULL)  //there is no free block in the correct order, need to split a bigger one
             to_alloc = split_blocks(order);
         else
             to_alloc = free_blocks[order]->m_first;
         /// what to do if NULL??, will not be tested according to piazza 599
         free_blocks[order]->removeBlock(to_alloc, true);
+        to_alloc->m_free_next=NULL;
+        to_alloc->m_free_prev=NULL;
         allocated->addBlock(to_alloc, to_alloc->m_size, false);
         return (void *) ((__uint8_t *) to_alloc + sizeof(malloc_metadata));
     }
@@ -417,9 +423,14 @@ void sfree(void* p) {     //TODO: if changing function beyond current add and re
         return;
     MallocMetadata bytePtr = (MallocMetadata)((__uint8_t*)p - _size_meta_data());
     giveMeCookieGotYouCookie(bytePtr);
+    if (bytePtr->m_is_free){
+        return;
+    }
     int order = calc_order(bytePtr->m_size);
     if (order < FREE_ARR_SIZE){    //not a large allocation
         allocated->removeBlock(bytePtr, false);   //remove from allocated
+        bytePtr->m_alloc_next = NULL;
+        bytePtr->m_alloc_prev = NULL;
         free_blocks[order]->addBlock(bytePtr, bytePtr->m_size, true);  //add to free list
         combine(bytePtr, order);
     }
