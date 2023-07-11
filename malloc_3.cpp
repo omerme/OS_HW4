@@ -304,7 +304,7 @@ bool initAllocList(){
 
 int calc_order(size_t size){
     int order =0;
-    while((size+sizeof(malloc_metadata)) > (1 << (order + 7))){    //find the order that fits the wanted size
+    while((size+sizeof(malloc_metadata)) > (unsigned)(1 << (order + 7))){    //find the order that fits the wanted size
         order++;
     }
     return order;
