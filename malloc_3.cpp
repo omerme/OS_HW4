@@ -62,16 +62,15 @@ BlockList allocated = NULL;
 
 BlockList free_blocks[FREE_ARR_SIZE] = {NULL}; // struct MyStruct* myArray[11] = {NULL};
 
+MmapList large_allocated = NULL;
+
 /**search for a free buddy for buddy1, if there is none, return NULL **/
 MallocMetadata block_list_t::searchBuddy(MallocMetadata buddy1) const{
     MallocMetadata temp = m_first;
     uintptr_t int_buddy1 = reinterpret_cast<uintptr_t>(buddy1);
-    while(temp != NULL) {
-        uintptr_t int_buddy2 = reinterpret_cast<uintptr_t>(temp);
-        if(int_buddy1^int_buddy2){
-            return temp;
-        }
-        temp = temp->m_free_next;
+    MallocMetadata buddy2_meta =(MallocMetadata)(int_buddy1^(buddy1->m_size + sizeof(malloc_metadata)));
+    if(buddy2_meta->m_is_free and buddy2_meta->m_size==buddy1->m_size) {
+        return buddy2_meta;
     }
     return NULL;
 }
@@ -144,6 +143,7 @@ void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
     }
 }
 
+
 void block_list_t::removeBlock(MallocMetadata to_remove, bool is_free) {
     if (!is_free){
         if (to_remove == m_first){
@@ -195,7 +195,32 @@ void mmap_list_t::mmap_AddBlock(MallocMetadata newNode, size_t size) {
 }
 
 
-
+void mmap_list_t::mmap_RemoveBlock(MallocMetadata to_delete){
+    if (to_delete==m_first and to_delete==m_last){
+        m_first = NULL;
+        m_last = NULL;
+        return;
+    }
+    if (to_delete == m_first){
+        to_delete->m_alloc_next->m_alloc_prev = NULL;
+        m_first = to_delete->m_alloc_next;
+        return;
+    }
+    if (to_delete == m_last){
+        to_delete->m_alloc_prev->m_alloc_next = NULL;
+        m_last = to_delete->m_alloc_prev;
+        return;
+    }
+    MallocMetadata temp = m_first->m_alloc_next;
+    while (temp != m_last){
+        if (temp == to_delete){
+            to_delete->m_alloc_prev->m_alloc_next = to_delete->m_alloc_next;
+            to_delete->m_alloc_next->m_alloc_prev = to_delete->m_alloc_prev;
+            return;
+        }
+        temp = temp->m_alloc_next;
+    }
+}
 
 
 MallocMetadata popBlock(int order) {
@@ -292,6 +317,7 @@ void* smalloc(size_t size){
         else
             to_alloc = free_blocks[order]->m_first;
         /// what to do if NULL??, will not be tested according to piazza 599
+        free_blocks[order]->removeBlock(to_alloc, true);
         allocated->addBlock(to_alloc, to_alloc->m_size, false);
         return (void*)( (__uint8_t*)to_alloc + sizeof(malloc_metadata) );
     }
