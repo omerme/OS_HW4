@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <cstdlib>
+#include <sys/mman.h>
 
 
 #define PAGE_IN_BYTES 4096
@@ -25,6 +26,14 @@ typedef struct malloc_metadata_t {
     malloc_metadata_t* m_free_prev;
 } *MallocMetadata, malloc_metadata ; // total MallocMetadata size (min size of block) = sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*)
 
+typedef struct mmap_list_t {
+    MallocMetadata m_first;
+    MallocMetadata m_last;
+
+    void mmap_AddBlock(MallocMetadata newNode, size_t size);
+    void mmap_RemoveBlock(MallocMetadata to_remove);
+
+} *MmapList, mmap_list;
 
 typedef struct block_list_t {
     MallocMetadata m_first;
@@ -44,7 +53,7 @@ size_t _size_meta_data();
 size_t _num_meta_data_bytes();
 void* smalloc(size_t size);
 void* scalloc(size_t num, size_t size);
-void sfree(void* p) ;
+void sfree(void* p);
 void* srealloc(void* oldp, size_t size);
 
 bool is_init = false;
@@ -68,27 +77,71 @@ MallocMetadata block_list_t::searchBuddy(MallocMetadata buddy1) const{
 }
 
 //adding a new block to list
-void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {   //TODO: sort by address
-    if(m_first==NULL) {
-        m_first = newNode;
-    }
-    else {   //if m_last!=NULL - list is not empty
-        if (is_free)
-            m_last->m_free_prev = newNode;
-        else
-            m_last->m_alloc_next = newNode;
-    }
+void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
     newNode->m_size = size;
     newNode->m_is_free = is_free;
-    if(is_free){
-        newNode->m_free_prev = m_last;
-        newNode->m_free_next = NULL;
+    if (is_free) {
+        if(m_first==NULL) {
+            newNode->m_free_prev=NULL;
+            newNode->m_free_next=NULL;
+            m_first = newNode;
+            m_last = newNode;
+            return;
+        }
+        if (newNode > m_last) {     //add to last:
+            newNode->m_free_next = NULL;
+            newNode->m_free_prev = m_last;
+            m_last->m_free_next = newNode;
+            m_last = m_last->m_free_next;
+            return;
+        }
+        //if m_last!=NULL - list is not empty
+        MallocMetadata temp =  m_first;
+        while (temp != NULL) {
+            if (temp > newNode) {
+                newNode->m_free_next = temp;
+                newNode->m_free_prev = temp->m_free_prev; //where did we set the previous m_first to NULL?
+                temp->m_free_prev = newNode;
+                if (temp != m_first)
+                    newNode->m_free_prev->m_free_next = newNode;
+                else
+                    m_first = newNode;
+                return;
+            }
+            temp = temp->m_free_next;
+        }
     }
     else{
-        newNode->m_alloc_prev = m_last;
-        newNode->m_alloc_next = NULL;
+        if(m_first==NULL) {
+            newNode->m_alloc_prev=NULL;
+            newNode->m_alloc_next=NULL;
+            m_first = newNode;
+            m_last = newNode;
+            return;
+        }
+        if (newNode > m_last) {     //add to last:
+            newNode->m_alloc_next = NULL;
+            newNode->m_alloc_prev = m_last;
+            m_last->m_alloc_next = newNode;
+            m_last = m_last->m_alloc_next;
+            return;
+        }
+        //if m_last!=NULL - list is not empty
+        MallocMetadata temp =  m_first;
+        while (temp != NULL) {
+            if (temp > newNode) {
+                newNode->m_alloc_next = temp;
+                newNode->m_alloc_prev = temp->m_alloc_prev; //where did we set the previous m_first to NULL?
+                temp->m_alloc_prev = newNode;
+                if (temp != m_first)
+                    newNode->m_alloc_prev->m_alloc_next = newNode;
+                else
+                    m_first = newNode;
+                return;
+            }
+            temp = temp->m_alloc_next;
+        }
     }
-    m_last = newNode;
 }
 
 void block_list_t::removeBlock(MallocMetadata to_remove, bool is_free) {
@@ -122,6 +175,26 @@ void block_list_t::removeBlock(MallocMetadata to_remove, bool is_free) {
     }
 }
 
+void mmap_list_t::mmap_AddBlock(MallocMetadata newNode, size_t size) {
+    newNode->m_size = size;
+    newNode->m_is_free = false;
+    newNode->m_free_next=NULL;
+    newNode->m_free_prev=NULL;
+    newNode->m_alloc_next = NULL;
+    ///cookie
+    if(m_first==NULL) {
+        newNode->m_alloc_prev = NULL;
+        m_first = newNode;
+        m_last = newNode;
+    }
+    else { //list not empty:
+        newNode->m_alloc_prev = m_last;
+        m_last->m_alloc_next = newNode;
+        m_last = m_last->m_alloc_next;
+    }
+}
+
+
 
 
 
@@ -149,7 +222,7 @@ __uint8_t * initAllocList(){
     if(cur_brk==(void*)(-1))
         return NULL;
     cur_brk += brk_diff; //advance to multiply of 128k*32
-    for(int i=0; i<(ALLOC_LIST_SIZE%ALLOC_MAX_BLOCK); i++) {
+    for(int i=0; i<(ALLOC_LIST_SIZE/ALLOC_MAX_BLOCK); i++) {
         free_blocks[FREE_ARR_SIZE-1]->addBlock((MallocMetadata)(cur_brk + i*ALLOC_MAX_BLOCK), ALLOC_MAX_BLOCK-sizeof(malloc_metadata), true);
     }
 }
@@ -167,37 +240,37 @@ int calc_order(size_t size){
 /** splits larger blocks until finds a free block in the wanted size **/
 MallocMetadata split_blocks(size_t size, int order){
     int next_free_order = order;
-    while(free_blocks[next_free_order]==NULL and next_free_order < FREE_ARR_SIZE){
+    while(next_free_order < FREE_ARR_SIZE and free_blocks[next_free_order]==NULL) {
         next_free_order++;
     }
-    if (next_free_order >= FREE_ARR_SIZE){  ///there is no free block that is large enough
+    if (next_free_order >= FREE_ARR_SIZE) {  ///there is no free block that is large enough
         return NULL;
     }
     for (int i = next_free_order; i > order; i--){
         MallocMetadata to_split = popBlock(i);   //remove from current order
         size_t new_size = (to_split->m_size - sizeof(malloc_metadata))/2;  //size after split
-        MallocMetadata fist = to_split;         //the fist half
+        MallocMetadata first = to_split;         //the first half
         MallocMetadata second = (MallocMetadata)(((__uint8_t*)to_split) +  new_size + sizeof(malloc_metadata));  // the second half
-        free_blocks[i-1]->addBlock(fist, new_size, true);   // add both to the order below
+        free_blocks[i-1]->addBlock(first, new_size, true);   // add both to the order below
         free_blocks[i-1]->addBlock(second, new_size, true);
     }
     return free_blocks[order]->m_first;
 }
 
-void combine(MallocMetadata buddy1, int order){
+void combine(MallocMetadata buddy1, int order) {
     MallocMetadata buddy2;
     MallocMetadata combined;
-    while (order < FREE_ARR_SIZE-1 ){
+    while (order < FREE_ARR_SIZE-1 ) {
         buddy2 = free_blocks[order]->searchBuddy(buddy1);
-        if (buddy2 == NULL){   //there is no free buddy
+        if (buddy2 == NULL){  //there is no free buddy
             return;
         }
-        combined = (reinterpret_cast<uintptr_t>(buddy1) > reinterpret_cast<uintptr_t>(buddy2)) ? buddy1 : buddy2;   //the combined block starts at the smaller buddy
+        combined = (buddy1 < buddy2) ? buddy1 : buddy2;   //the combined block starts at the smaller buddy
         free_blocks[order]->removeBlock(buddy1, true);   //remove two small buddys
         free_blocks[order]->removeBlock(buddy2, true);
         order++;
         int new_size = (1 << (7+order)) - sizeof(malloc_metadata);
-        free_blocks[order]->addBlock(combined, new_size, true);   //add large combined block
+        free_blocks[order]->addBlock(combined, new_size, true); //add large combined block
         buddy1 = combined;    //for next iteration, find a buddy for the combined block
     }
 }
@@ -220,11 +293,13 @@ void* smalloc(size_t size){
             to_alloc = free_blocks[order]->m_first;
         /// what to do if NULL??, will not be tested according to piazza 599
         allocated->addBlock(to_alloc, to_alloc->m_size, false);
-        return (void*)(((__uint8_t*)to_alloc) + sizeof(malloc_metadata));
+        return (void*)( (__uint8_t*)to_alloc + sizeof(malloc_metadata) );
     }
-    else{  // large alloc, allocate with mmap
-
-    }
+    else{  // large alloc, allocate with mmap - if size_metadata+size >128kbit:
+        int  tot_size = 1 << (order+7);
+        MallocMetadata newBlock = (MallocMetadata)mmap( NULL, tot_size, PROT_READ | PROT_WRITE , MAP_PRIVATE, -1, 0);
+        large_allocated->mmap_AddBlock(newBlock, tot_size- sizeof(malloc_metadata));
+        return (void*)( (__uint8_t*)newBlock + sizeof(malloc_metadata) );
 
 }
 
@@ -242,10 +317,16 @@ void sfree(void* p) {     //TODO: add cookie support
     if(p==NULL)
         return;
     MallocMetadata bytePtr = (MallocMetadata)((__uint8_t*)p - _size_meta_data());
-    allocated->removeBlock(bytePtr, false);   //remove from allocated
     int order = calc_order(bytePtr->m_size);
-    free_blocks[order]->addBlock(bytePtr, bytePtr->m_size, true);  //add to free list
-    combine(bytePtr, order);
+    if (order < FREE_ARR_SIZE){    //not a large allocation
+        allocated->removeBlock(bytePtr, false);   //remove from allocated
+        free_blocks[order]->addBlock(bytePtr, bytePtr->m_size, true);  //add to free list
+        combine(bytePtr, order);
+    }
+    else {  /// mmap shit..
+        large_allocated->mmap_RemoveBlock(bytePtr);
+        munmap((void*)bytePtr, bytePtr->m_size + sizeof(malloc_metadata));
+    }
 }
 
 
