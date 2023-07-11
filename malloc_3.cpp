@@ -519,3 +519,9 @@ size_t _size_meta_data(){
 size_t _num_meta_data_bytes(){
     return _size_meta_data()*_num_allocated_blocks();
 }
+
+int main() {
+    char* s1 = (char*) smalloc(10);
+    char* s2 = (char*) smalloc(10);
+    char* s3 = (char*) smalloc(10);
+}

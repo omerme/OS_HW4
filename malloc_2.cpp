@@ -15,7 +15,7 @@ typedef struct malloc_metadata_t {
     size_t m_size;
     bool m_is_free;
     malloc_metadata_t* m_next;
-    //malloc_metadata_t* m_prev;
+    malloc_metadata_t* m_prev;
 }*MallocMetadata, malloc_metadata ; // total MallocMetadata size (min size of block) = sizeof(size_t)+sizeof(bool)+2*sizeof(MallocMetadata*)
 
 struct BlockList {
@@ -61,7 +61,7 @@ void BlockList::addBlock(MallocMetadata newNode, size_t size) {
     }
     newNode->m_size = size;
     newNode->m_is_free = false;
-    //newNode->m_prev = m_last;
+    newNode->m_prev = m_last;
     newNode->m_next = NULL;
     m_last = newNode;
 }
@@ -78,9 +78,9 @@ void* smalloc(size_t size){
         free_block->m_is_free = false;
         return (void *)((__uint8_t*)(free_block) + sizeof(free_block));
     }
-    __uint8_t * cur_ptr = (__uint8_t*)list.m_last + (list.m_last->m_size) + sizeof(malloc_metadata);
+    //__uint8_t * cur_ptr = (__uint8_t*)list.m_last + (list.m_last->m_size) + sizeof(malloc_metadata);
     size_t tot_size = size + sizeof(malloc_metadata);
-    __uint8_t * curr_brk = (__uint8_t *)sbrk(0);
+    //__uint8_t * curr_brk = (__uint8_t *)sbrk(0);
     //size_t cur_diff = curr_brk - cur_ptr;
     if((size_t)(curr_brk - cur_ptr) > tot_size) { // enough space for allocation:
         cur_ptr += tot_size;
