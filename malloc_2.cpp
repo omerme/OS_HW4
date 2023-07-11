@@ -76,25 +76,25 @@ void* smalloc(size_t size){
     MallocMetadata free_block = list.searchList(size);
     if (free_block != NULL) {
         free_block->m_is_free = false;
-        return (void *)((__uint8_t*)(free_block) + sizeof(free_block));
+        return (void *)((__uint8_t*)(free_block) + sizeof(malloc_metadata));
     }
     //__uint8_t * cur_ptr = (__uint8_t*)list.m_last + (list.m_last->m_size) + sizeof(malloc_metadata);
     size_t tot_size = size + sizeof(malloc_metadata);
     //__uint8_t * curr_brk = (__uint8_t *)sbrk(0);
     //size_t cur_diff = curr_brk - cur_ptr;
-    if((size_t)(curr_brk - cur_ptr) > tot_size) { // enough space for allocation:
-        cur_ptr += tot_size;
+//    if((size_t)(curr_brk - cur_ptr) > tot_size) { // enough space for allocation:
+//        cur_ptr += tot_size;
+//    }
+     // not enough space for allocation - need to allocate more!
+     //else
+    //unsigned long int pages_to_alloc = tot_size/PAGE_IN_BYTES;
+    __uint8_t * curr_brk = (__uint8_t *)sbrk(tot_size);
+    if (curr_brk == (void*)(-1)) {
+        return NULL;
     }
-    else { // not enough space for allocation - need to allocate more!
-        unsigned long int pages_to_alloc = tot_size/PAGE_IN_BYTES;
-        curr_brk = (__uint8_t *)sbrk(PAGE_IN_BYTES*(pages_to_alloc+1));
-        if (curr_brk == (void*)(-1)) {
-            return NULL;
-        }
-        cur_ptr += tot_size;
-    }
-    list.addBlock((MallocMetadata)(cur_ptr-tot_size), size);
-    return (void*)(cur_ptr-size);
+    //curr_brk += tot_size;
+    list.addBlock((MallocMetadata)curr_brk, size);
+    return (void*)(curr_brk+ sizeof(malloc_metadata));
 }
 
 

@@ -286,7 +286,7 @@ MallocMetadata popBlock(int order) {
 bool initAllocList(){
     __uint8_t* start_brk = (__uint8_t*)sbrk(0);
     /// assert start_brk%4096=0;
-    assert((unsigned long)start_brk % PAGE_IN_BYTES == 0);
+    //assert((unsigned long)start_brk % PAGE_IN_BYTES == 0);
     int brk_diff = ALLOC_LIST_SIZE - ((unsigned long long)start_brk)%(ALLOC_LIST_SIZE);
     __uint8_t* cur_brk =(__uint8_t*)sbrk(brk_diff + ALLOC_LIST_SIZE);
     if(cur_brk==(void*)(-1))
