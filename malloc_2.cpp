@@ -61,7 +61,7 @@ void BlockList::addBlock(MallocMetadata newNode, size_t size) {
     }
     newNode->m_size = size;
     newNode->m_is_free = false;
-    newNode->m_prev = m_last;
+    //newNode->m_prev = m_last;
     newNode->m_next = NULL;
     m_last = newNode;
 }

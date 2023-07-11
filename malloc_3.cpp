@@ -16,7 +16,7 @@
 #define FREE_ARR_SIZE 11
 
 typedef struct malloc_metadata_t {
-    int cookie;
+    uint32_t cookie;
     size_t m_size;
     bool m_is_free;
     malloc_metadata_t* m_alloc_next;
@@ -68,7 +68,7 @@ uint32_t COOKIE_VAL;
 
 
 
-bool giveMeCookieGotYouCookie(MallocMetadata block) {
+void giveMeCookieGotYouCookie(MallocMetadata block) {
     assert(block!=NULL);
     if (block->cookie != COOKIE_VAL) {
         exit(0xdeadbeef);
@@ -256,8 +256,8 @@ void mmap_list_t::mmap_RemoveBlock(MallocMetadata to_remove){
         giveMeCookieGotYouCookie(temp);
         if (temp == to_remove){
             giveMeCookieGotYouCookie(temp->m_alloc_next);
-            to_delete->m_alloc_prev->m_alloc_next = to_delete->m_alloc_next;
-            to_delete->m_alloc_next->m_alloc_prev = to_delete->m_alloc_prev;
+            to_remove->m_alloc_prev->m_alloc_next = to_remove->m_alloc_next;
+            to_remove->m_alloc_next->m_alloc_prev = to_remove->m_alloc_prev;
             return;
         }
         temp = temp->m_alloc_next;
@@ -282,14 +282,14 @@ MallocMetadata popBlock(int order) {
 }
 
 
-__uint8_t * initAllocList(){
+bool initAllocList(){
     __uint8_t* start_brk = (__uint8_t*)sbrk(0);
     /// assert start_brk%4096=0;
-    unsigned int brk_diff = ALLOC_LIST_SIZE - ((unsigned long long)start_brk)%(ALLOC_LIST_SIZE);
-
+    assert((unsigned long)start_brk % PAGE_IN_BYTES == 0);
+    int brk_diff = ALLOC_LIST_SIZE - ((unsigned long long)start_brk)%(ALLOC_LIST_SIZE);
     __uint8_t* cur_brk =(__uint8_t*)sbrk(brk_diff + ALLOC_LIST_SIZE);
     if(cur_brk==(void*)(-1))
-        return NULL;
+        return false;
     cur_brk += brk_diff; //advance to multiply of 128k*32
     assert((unsigned long)cur_brk % ALLOC_LIST_SIZE == 0);
     srand(time(NULL));
@@ -297,6 +297,7 @@ __uint8_t * initAllocList(){
     for(int i=0; i<(ALLOC_LIST_SIZE/ALLOC_MAX_BLOCK); i++) {
         free_blocks[FREE_ARR_SIZE-1]->addBlock((MallocMetadata)(cur_brk + i*ALLOC_MAX_BLOCK), ALLOC_MAX_BLOCK-sizeof(malloc_metadata), true);
     }
+    return true;
 }
 
 
@@ -456,7 +457,7 @@ void* srealloc(void* oldp, size_t newsize){
 
 size_t _num_free_blocks() {
     size_t numFree = 0;
-    for (int i = 0; i < FREE_ARR_SIZE; ++i) {
+    for(int i = 0; i < FREE_ARR_SIZE; ++i) {
         MallocMetadata temp = free_blocks[i]->m_first;
         while (temp!=NULL) {
             numFree++;
