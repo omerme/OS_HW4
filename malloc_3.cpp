@@ -68,17 +68,6 @@ BlockList allocated = &alloc_list;
 
 //BlockList allocated = NULL;
 block_list free_val[FREE_ARR_SIZE];
-//block_list l0;
-//block_list l1;
-//block_list l2;
-//block_list l3;
-//block_list l4;
-//block_list l5;
-//block_list l6;
-//block_list l7;
-//block_list l8;
-//block_list l9;
-//block_list l10;
 BlockList free_blocks[FREE_ARR_SIZE]; // struct MyStruct* myArray[11] = {NULL};
 
 mmap_list large_all {NULL,NULL};
@@ -343,7 +332,7 @@ int calc_order(size_t size){
 /** splits larger blocks until finds a free block in the wanted size **/
 MallocMetadata split_blocks(int order){
     int next_free_order = order;
-    while(next_free_order < FREE_ARR_SIZE-1 and free_blocks[next_free_order]->m_first==NULL) {
+    while(next_free_order < FREE_ARR_SIZE and free_blocks[next_free_order]->m_first==NULL) {
         next_free_order++;
     }
     if (next_free_order >= FREE_ARR_SIZE) {  ///there is no free block that is large enough
@@ -381,12 +370,12 @@ MallocMetadata combine(MallocMetadata buddy1, int order, int max_order = FREE_AR
 
 
 void* smalloc(size_t size) {
-    if (size == 0 || size > MAX_ALLOC)
-        return NULL;
     if (!is_init) {
         initAllocList();
         is_init = true;
     }
+    if (size == 0 || size > MAX_ALLOC)
+        return NULL;
     int order = calc_order(size);
     if (order < FREE_ARR_SIZE) {   //not a large alloc, allocate from heap
         MallocMetadata to_alloc = NULL;
@@ -395,6 +384,9 @@ void* smalloc(size_t size) {
         else
             to_alloc = free_blocks[order]->m_first;
         /// what to do if NULL??, will not be tested according to piazza 599
+        if (to_alloc == NULL){
+            return NULL;
+        }
         free_blocks[order]->removeBlock(to_alloc, true);
         to_alloc->m_free_next=NULL;
         to_alloc->m_free_prev=NULL;
@@ -465,6 +457,10 @@ void* srealloc(void* oldp, size_t newsize){
         free_blocks[old_order]->addBlock(meta_oldp, meta_oldp->m_size, true);  //add to free list
         MallocMetadata newPtr = combine(meta_oldp, old_order, new_order);
         if(calc_order(newPtr->m_size) == new_order) { // if combined has enough space
+            free_blocks[new_order]->removeBlock(newPtr, true);
+            meta_oldp->m_alloc_next = NULL;
+            meta_oldp->m_free_prev = NULL;
+            allocated->addBlock(newPtr, newPtr->m_size, false);
             if (newPtr == meta_oldp){  //block starts from the same point, no need for memmove
                 return oldp;
             }
@@ -511,6 +507,9 @@ size_t _num_free_blocks() {
 
 
 size_t _num_free_bytes(){
+    if(!is_init){
+        return 0;
+    }
     size_t free_count = 0;
     for(int i=0 ; i<FREE_ARR_SIZE ; i++){
         MallocMetadata temp = free_blocks[i]->m_first;
@@ -524,6 +523,9 @@ size_t _num_free_bytes(){
 
 
 size_t _num_allocated_blocks(){
+    if (!is_init){
+        return 0;
+    }
     size_t numAlloc = _num_free_blocks(); // from free struct
     MallocMetadata temp = allocated->m_first;
     while (temp!=NULL) { //from alloc list
