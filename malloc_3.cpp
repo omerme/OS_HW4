@@ -66,6 +66,18 @@ BlockList free_blocks[FREE_ARR_SIZE] = {NULL}; // struct MyStruct* myArray[11] =
 
 MmapList large_allocated = NULL;
 
+uint32_t COOKIE_VAL;
+
+
+
+
+bool giveMeCookieGotYouCookie(MallocMetadata block) {
+    assert(block!=NULL);
+    if (block->cookie != COOKIE_VAL) {
+        exit(0xdeadbeef);
+    }
+}
+
 /**search for a free buddy for buddy1, if there is none, return NULL **/
 MallocMetadata block_list_t::searchBuddy(MallocMetadata buddy1) const {
     uintptr_t int_buddy1 = reinterpret_cast<uintptr_t>(buddy1);
@@ -79,6 +91,7 @@ MallocMetadata block_list_t::searchBuddy(MallocMetadata buddy1) const {
 
 //adding a new block to list
 void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
+    newNode->cookie = COOKIE_VAL;
     newNode->m_size = size;
     newNode->m_is_free = is_free;
     if (is_free) {
@@ -100,6 +113,7 @@ void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
         //if m_last!=NULL - list is not empty
         MallocMetadata temp =  m_first;
         while (temp != NULL) {
+            giveMeCookieGotYouCookie(temp);
             if (temp > newNode) {
                 newNode->m_free_next = temp;
                 newNode->m_free_prev = temp->m_free_prev; //where did we set the previous m_first to NULL?
@@ -122,6 +136,7 @@ void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
             return;
         }
         if (newNode > m_last) {     //add to last:
+            giveMeCookieGotYouCookie(m_last);
             newNode->m_alloc_next = NULL;
             newNode->m_alloc_prev = m_last;
             m_last->m_alloc_next = newNode;
@@ -131,6 +146,7 @@ void block_list_t::addBlock(MallocMetadata newNode, size_t size, bool is_free) {
         //if m_last!=NULL - list is not empty
         MallocMetadata temp =  m_first;
         while (temp != NULL) {
+            giveMeCookieGotYouCookie(temp);
             if (temp > newNode) {
                 newNode->m_alloc_next = temp;
                 newNode->m_alloc_prev = temp->m_alloc_prev; //where did we set the previous m_first to NULL?
@@ -181,7 +197,7 @@ void block_list_t::removeBlock(MallocMetadata to_remove, bool is_free) {
             giveMeCookieGotYouCookie(m_first);
             m_first->m_free_prev = NULL;
         }
-        if (to_remove == m_last){
+        else if (to_remove == m_last){
             m_last = m_last->m_free_prev;
             giveMeCookieGotYouCookie(m_last);
             m_last->m_free_next = NULL;
@@ -240,7 +256,9 @@ void mmap_list_t::mmap_RemoveBlock(MallocMetadata to_delete){
     }
     MallocMetadata temp = m_first->m_alloc_next;
     while (temp != m_last){
-        if (temp == to_delete){
+        giveMeCookieGotYouCookie(temp);
+        if (temp == to_delete){;
+            giveMeCookieGotYouCookie(temp->m_alloc_next);
             to_delete->m_alloc_prev->m_alloc_next = to_delete->m_alloc_next;
             to_delete->m_alloc_next->m_alloc_prev = to_delete->m_alloc_prev;
             return;
@@ -260,6 +278,7 @@ MallocMetadata popBlock(int order) {
     else {
         giveMeCookieGotYouCookie(free_blocks[order]->m_first);
         free_blocks[order]->m_first->m_free_prev = NULL;
+    }
     res->m_free_next = NULL;
     res->m_free_prev = NULL;
     return res;
@@ -315,10 +334,10 @@ MallocMetadata split_blocks(size_t size, int order){
 MallocMetadata combine(MallocMetadata buddy1, int order, int max_order = FREE_ARR_SIZE-1) {
     MallocMetadata buddy2;
     MallocMetadata combined;
-    while (order < FREE_ARR_SIZE-1 ) {
+    while (order < max_order) {
         buddy2 = free_blocks[order]->searchBuddy(buddy1);
         if (buddy2 == NULL){  //there is no free buddy
-            return;
+            return buddy1;
         }
         combined = (buddy1 < buddy2) ? buddy1 : buddy2;   //the combined block starts at the smaller buddy
         free_blocks[order]->removeBlock(buddy1, true);   //remove two small buddys
@@ -328,8 +347,8 @@ MallocMetadata combine(MallocMetadata buddy1, int order, int max_order = FREE_AR
         free_blocks[order]->addBlock(combined, new_size, true); //add large combined block
         buddy1 = combined;    //for next iteration, find a buddy for the combined block
     }
+    return buddy1;
 }
-
 
 
 void* smalloc(size_t size) {
@@ -372,6 +391,7 @@ void sfree(void* p) {     //TODO: if changing function beyond current add and re
     if(p==NULL)
         return;
     MallocMetadata bytePtr = (MallocMetadata)((__uint8_t*)p - _size_meta_data());
+    giveMeCookieGotYouCookie(bytePtr);
     int order = calc_order(bytePtr->m_size);
     if (order < FREE_ARR_SIZE){    //not a large allocation
         allocated->removeBlock(bytePtr, false);   //remove from allocated
@@ -380,7 +400,8 @@ void sfree(void* p) {     //TODO: if changing function beyond current add and re
     }
     else {  /// mmap shit..
         large_allocated->mmap_RemoveBlock(bytePtr);
-        munmap((void*)bytePtr, bytePtr->m_size + sizeof(malloc_metadata));
+        unsigned int tot_size = (1 + (bytePtr->m_size + sizeof(malloc_metadata))/PAGE_IN_BYTES)*PAGE_IN_BYTES;
+        munmap((void*)bytePtr, tot_size);
     }
 }
 
@@ -449,14 +470,13 @@ size_t _num_free_blocks() {
 
 
 size_t _num_free_bytes(){
-
     size_t free_count = 0;
-    MallocMetadata temp = list.m_first;
-    while(temp != NULL){
-        if (temp->m_is_free){
+    for(int i=0 ; i<FREE_ARR_SIZE ; i++){
+        MallocMetadata temp = free_blocks[i]->m_first;
+        while (temp != NULL){
             free_count += temp->m_size;
+            temp = temp->m_free_next;
         }
-        temp = temp->m_next;
     }
     return free_count;
 }
