@@ -9,15 +9,15 @@
 #include <time.h>
 #include <assert.h>
 #include <cstdint>
-
+//#include <stdio.h>
+#include <iostream>
 
 
 #define PAGE_IN_BYTES 4096
 #define MAX_ALLOC 100000000
 #define ALLOC_MAX_BLOCK 131072 // 128*1024
-#define ALLOC_LIST_SIZE (128*1024*32) ///TODO: change after to 32
+#define ALLOC_LIST_SIZE (128*1024*32) // 128*1024*32
 #define FREE_ARR_SIZE 11
-// 128*1024*32
 
 typedef struct malloc_metadata_t {
     u_int32_t cookie;
@@ -81,8 +81,8 @@ block_list free_val[FREE_ARR_SIZE];
 //block_list l10;
 BlockList free_blocks[FREE_ARR_SIZE]; // struct MyStruct* myArray[11] = {NULL};
 
-
-MmapList large_allocated;
+mmap_list large_all {NULL,NULL};
+MmapList large_allocated = &large_all;
 
 u_int32_t COOKIE_VAL;
 
@@ -403,7 +403,7 @@ void* smalloc(size_t size) {
     }
     else {  // large alloc, allocate with mmap - if size_metadata+size >128kbit:
         unsigned int tot_size = (1 + (size + sizeof(malloc_metadata))/PAGE_IN_BYTES)*PAGE_IN_BYTES;
-        MallocMetadata newBlock = (MallocMetadata) mmap(NULL, tot_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
+        MallocMetadata newBlock = (MallocMetadata)mmap(NULL, tot_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         large_allocated->mmap_AddBlock(newBlock, size);
         return (void *) ((__uint8_t *) newBlock + sizeof(malloc_metadata));
     }
@@ -495,6 +495,9 @@ void* srealloc(void* oldp, size_t newsize){
 
 
 size_t _num_free_blocks() {
+    if(!is_init) {
+        return 0;
+    }
     size_t numFree = 0;
     for(int i = 0; i < FREE_ARR_SIZE; ++i) {
         MallocMetadata temp = free_blocks[i]->m_first;
@@ -537,6 +540,9 @@ size_t _num_allocated_blocks(){
 
 
 size_t _num_allocated_bytes() {
+    if(!is_init) {
+        return 0;
+    }
     size_t totalBytes = 0;
     size_t allocatedBlocks = _num_allocated_blocks();
     MallocMetadata temp = large_allocated->m_first;
@@ -555,18 +561,10 @@ size_t _size_meta_data(){
 }
 
 size_t _num_meta_data_bytes(){
+    if(!is_init) {
+        return 0;
+    }
     return _size_meta_data()*_num_allocated_blocks();
 }
 
-//int main() {
-//    char* s1 = (char*) smalloc(10);
-//    char* s2 = (char*) smalloc(10);
-//    char* s3 = (char*) smalloc(10);
-//    sfree(s1);
-//    sfree(s2);
-//    sfree(s3);
-//    sfree(s3);
-//    //char* s1_new = (char*) smalloc(10);
-//
-//
-//}
+
