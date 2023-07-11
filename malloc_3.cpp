@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
+#include <cstdint>
 
 #define PAGE_IN_BYTES 4096
 #define MAX_ALLOC 100000000
@@ -16,7 +17,7 @@
 #define FREE_ARR_SIZE 11
 
 typedef struct malloc_metadata_t {
-    uint32_t cookie;
+    u_int32_t cookie;
     size_t m_size;
     bool m_is_free;
     malloc_metadata_t* m_alloc_next;
@@ -63,7 +64,7 @@ BlockList free_blocks[FREE_ARR_SIZE] = {NULL}; // struct MyStruct* myArray[11] =
 
 MmapList large_allocated = NULL;
 
-uint32_t COOKIE_VAL;
+u_int32_t COOKIE_VAL;
 
 
 
