@@ -10,11 +10,14 @@
 #include <assert.h>
 #include <cstdint>
 
+
+
 #define PAGE_IN_BYTES 4096
 #define MAX_ALLOC 100000000
 #define ALLOC_MAX_BLOCK 131072 // 128*1024
-#define ALLOC_LIST_SIZE 4194304 // 128*1024*32
+#define ALLOC_LIST_SIZE (128*1024*32) ///TODO: change after to 32
 #define FREE_ARR_SIZE 11
+// 128*1024*32
 
 typedef struct malloc_metadata_t {
     u_int32_t cookie;
@@ -58,9 +61,25 @@ void* srealloc(void* oldp, size_t size);
 
 bool is_init = false;
 
-BlockList allocated = NULL;
+block_list alloc_list;
+BlockList allocated = &alloc_list;
 
-BlockList free_blocks[FREE_ARR_SIZE] = {NULL}; // struct MyStruct* myArray[11] = {NULL};
+
+//BlockList allocated = NULL;
+block_list free_val[FREE_ARR_SIZE];
+//block_list l0;
+//block_list l1;
+//block_list l2;
+//block_list l3;
+//block_list l4;
+//block_list l5;
+//block_list l6;
+//block_list l7;
+//block_list l8;
+//block_list l9;
+//block_list l10;
+BlockList free_blocks[FREE_ARR_SIZE]; // struct MyStruct* myArray[11] = {NULL};
+
 
 MmapList large_allocated = NULL;
 
@@ -75,6 +94,8 @@ void giveMeCookieGotYouCookie(MallocMetadata block) {
         exit(0xdeadbeef);
     }
 }
+
+
 
 /**search for a free buddy for buddy1, if there is none, return NULL **/
 MallocMetadata block_list_t::searchBuddy(MallocMetadata buddy1) const {
@@ -267,7 +288,7 @@ void mmap_list_t::mmap_RemoveBlock(MallocMetadata to_remove){
 
 
 MallocMetadata popBlock(int order) {
-    assert(free_blocks[order]!=NULL);
+    assert(free_blocks[order]->m_first!=NULL);
     MallocMetadata res = free_blocks[order]->m_first;
     giveMeCookieGotYouCookie(res);
     free_blocks[order]->m_first = res->m_free_next; // change head to next, if next is null then list is empty{
@@ -287,11 +308,15 @@ bool initAllocList(){
     __uint8_t* start_brk = (__uint8_t*)sbrk(0);
     /// assert start_brk%4096=0;
     //assert((unsigned long)start_brk % PAGE_IN_BYTES == 0);
+    //__uint8_t* bla =(__uint8_t*)sbrk(ALLOC_LIST_SIZE);
     int brk_diff = ALLOC_LIST_SIZE - ((unsigned long long)start_brk)%(ALLOC_LIST_SIZE);
-    __uint8_t* cur_brk =(__uint8_t*)sbrk(brk_diff + ALLOC_LIST_SIZE);
+    __uint8_t* cur_brk =(__uint8_t*)sbrk(brk_diff);
     if(cur_brk==(void*)(-1))
         return false;
-    cur_brk += brk_diff; //advance to multiply of 128k*32
+    cur_brk =(__uint8_t*)sbrk(ALLOC_LIST_SIZE);
+    if(cur_brk==(void*)(-1))
+        return false;
+    //cur_brk += brk_diff; //advance to multiply of 128k*32
     assert((unsigned long)cur_brk % ALLOC_LIST_SIZE == 0);
     srand(time(NULL));
     COOKIE_VAL = rand();
@@ -314,7 +339,7 @@ int calc_order(size_t size){
 /** splits larger blocks until finds a free block in the wanted size **/
 MallocMetadata split_blocks(int order){
     int next_free_order = order;
-    while(next_free_order < FREE_ARR_SIZE and free_blocks[next_free_order]==NULL) {
+    while(next_free_order < FREE_ARR_SIZE-1 and free_blocks[next_free_order]->m_first==NULL) {
         next_free_order++;
     }
     if (next_free_order >= FREE_ARR_SIZE) {  ///there is no free block that is large enough
@@ -424,6 +449,8 @@ void* srealloc(void* oldp, size_t newsize){
         int old_order = calc_order(meta_oldp->m_size);
         int new_order = calc_order(newsize);
         allocated->removeBlock(meta_oldp, false);   //remove from allocated
+        meta_oldp->m_alloc_next = NULL;
+        meta_oldp->m_alloc_prev = NULL;
         free_blocks[old_order]->addBlock(meta_oldp, meta_oldp->m_size, true);  //add to free list
         MallocMetadata newPtr = combine(meta_oldp, old_order, new_order);
         if(calc_order(newPtr->m_size) == new_order) { // if combined has enough space
@@ -524,4 +551,11 @@ int main() {
     char* s1 = (char*) smalloc(10);
     char* s2 = (char*) smalloc(10);
     char* s3 = (char*) smalloc(10);
+    sfree(s1);
+    sfree(s2);
+    sfree(s3);
+    sfree(s3);
+    //char* s1_new = (char*) smalloc(10);
+
+
 }
